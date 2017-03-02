@@ -24,6 +24,7 @@ All VM specifics are self-contained and the class provides methods to
 operate on the VM: boot, shutdown, etc.
 """
 
+import ipdb
 import json
 import logging
 import re
@@ -172,6 +173,8 @@ class GceVmSpec(virtual_machine.BaseVmSpec):
     num_local_ssds: int. The number of local SSDs to attach to the instance.
     preemptible: boolean. True if the VM should be preemptible, False otherwise.
     project: string or None. The project to create the VM in.
+    image_project: string or None. The image project used to locate the
+        specifed image.
     boot_disk_size: None or int. The size of the boot disk in GB.
     boot_disk_type: string or None. The tyoe of the boot disk.
   """
@@ -213,6 +216,8 @@ class GceVmSpec(virtual_machine.BaseVmSpec):
       config_values['machine_type'] = yaml.load(flag_values.machine_type)
     if flag_values['project'].present:
       config_values['project'] = flag_values.project
+    if flag_values['image_project'].present:
+      config_values['image_project'] = flag_values.image_project
 
   @classmethod
   def _GetOptionDecoderConstructions(cls):
@@ -231,7 +236,8 @@ class GceVmSpec(virtual_machine.BaseVmSpec):
         'preemptible': (option_decoders.BooleanDecoder, {'default': False}),
         'boot_disk_size': (option_decoders.IntDecoder, {'default': None}),
         'boot_disk_type': (option_decoders.StringDecoder, {'default': None}),
-        'project': (option_decoders.StringDecoder, {'default': None})})
+        'project': (option_decoders.StringDecoder, {'default': None}),
+        'image_project': (option_decoders.StringDecoder, {'default': None})})
     return result
 
 
@@ -264,6 +270,7 @@ class GceVirtualMachine(virtual_machine.BaseVirtualMachine):
     self.memory_mib = vm_spec.memory
     self.preemptible = vm_spec.preemptible
     self.project = vm_spec.project or util.GetDefaultProject()
+    self.image_project = vm_spec.image_project
     self.network = gce_network.GceNetwork.GetNetwork(self)
     self.firewall = gce_network.GceFirewall.GetFirewall()
     self.boot_disk_size = vm_spec.boot_disk_size
@@ -285,8 +292,8 @@ class GceVirtualMachine(virtual_machine.BaseVirtualMachine):
       cmd.flags['network'] = self.network.network_resource.name
     cmd.flags['image'] = self.image
     cmd.flags['boot-disk-auto-delete'] = True
-    if FLAGS.image_project:
-      cmd.flags['image-project'] = FLAGS.image_project
+    if self.image_project is not None: #or FLAGS.image_project:
+      cmd.flags['image-project'] = self.image_project # or FLAGS.image_project
     cmd.flags['boot-disk-size'] = self.boot_disk_size or self.BOOT_DISK_SIZE_GB
     cmd.flags['boot-disk-type'] = self.boot_disk_type or self.BOOT_DISK_TYPE
     if self.machine_type is None:
