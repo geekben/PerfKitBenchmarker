@@ -1,4 +1,4 @@
-# Copyright 2015 PerfKitBenchmarker Authors. All rights reserved.
+# Copyright 2017 PerfKitBenchmarker Authors. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -41,9 +41,15 @@ _VM_SPEC_REGISTRY = {}
 _VM_REGISTRY = {}
 
 
+flags.DEFINE_boolean(
+    'dedicated_hosts', False,
+    'If True, use hosts that only have VMs from the same '
+    'benchmark running on them.')
 flags.DEFINE_list('vm_metadata', [], 'Metadata to add to the vm '
                   'via the provider\'s AddMetadata function. It expects'
                   'key:value pairs')
+
+VALID_GPU_TYPES = ['k80', 'p100']
 
 
 def GetVmSpecClass(cloud):
@@ -88,6 +94,8 @@ class BaseVmSpec(spec.BaseSpec):
   Attributes:
     zone: The region / zone the in which to launch the VM.
     machine_type: The provider-specific instance type (e.g. n1-standard-8).
+    gpu_count: None or int. Number of gpus to attach to the VM.
+    gpu_type: None or string. Type of gpus to attach to the VM.
     image: The disk image to boot from.
     install_packages: If false, no packages will be installed. This is
         useful if benchmark dependencies have already been installed.
@@ -134,6 +142,19 @@ class BaseVmSpec(spec.BaseSpec):
     if flag_values['background_network_ip_type'].present:
       config_values['background_network_ip_type'] = (
           flag_values.background_network_ip_type)
+    if flag_values['dedicated_hosts'].present:
+      config_values['use_dedicated_host'] = flag_values.dedicated_hosts
+    if flag_values['gpu_type'].present:
+      config_values['gpu_type'] = flag_values.gpu_type
+    if flag_values['gpu_count'].present:
+      config_values['gpu_count'] = flag_values.gpu_count
+
+    if 'gpu_count' in config_values and 'gpu_type' not in config_values:
+      raise errors.Config.MissingOption(
+          'gpu_type must be specified if gpu_count is set')
+    if 'gpu_type' in config_values and 'gpu_count' not in config_values:
+      raise errors.Config.MissingOption(
+          'gpu_count must be specified if gpu_type is set')
 
   @classmethod
   def _GetOptionDecoderConstructions(cls):
@@ -154,8 +175,14 @@ class BaseVmSpec(spec.BaseSpec):
         'install_packages': (option_decoders.BooleanDecoder, {'default': True}),
         'machine_type': (option_decoders.StringDecoder, {'none_ok': True,
                                                          'default': None}),
+        'gpu_type': (option_decoders.EnumDecoder, {
+            'valid_values': VALID_GPU_TYPES,
+            'default': None}),
+        'gpu_count': (option_decoders.IntDecoder, {'min': 1, 'default': None}),
         'zone': (option_decoders.StringDecoder, {'none_ok': True,
                                                  'default': None}),
+        'use_dedicated_host': (option_decoders.BooleanDecoder,
+                               {'default': False}),
         'background_network_mbits_per_sec': (option_decoders.IntDecoder, {
             'none_ok': True, 'default': None}),
         'background_network_ip_type': (option_decoders.EnumDecoder, {
@@ -219,6 +246,8 @@ class BaseVirtualMachine(resource.BaseResource):
       BaseVirtualMachine._instance_counter += 1
     self.zone = vm_spec.zone
     self.machine_type = vm_spec.machine_type
+    self.gpu_count = vm_spec.gpu_count
+    self.gpu_type = vm_spec.gpu_type
     self.image = vm_spec.image
     self.install_packages = vm_spec.install_packages
     self.ip_address = None
@@ -236,9 +265,13 @@ class BaseVirtualMachine(resource.BaseResource):
     self.background_network_mbits_per_sec = (
         vm_spec.background_network_mbits_per_sec)
     self.background_network_ip_type = vm_spec.background_network_ip_type
+    self.use_dedicated_host = None
 
     self.network = None
     self.firewall = None
+    self.tcp_congestion_control = None
+    self.numa_node_count = None
+    self.num_disable_cpus = None
 
   def __repr__(self):
     return '<BaseVirtualMachine [ip={0}, internal_ip={1}]>'.format(
@@ -278,6 +311,13 @@ class BaseVirtualMachine(resource.BaseResource):
               disk_num, len(self.scratch_disks)))
     return self.scratch_disks[disk_num].mount_point
 
+  def AllowIcmp(self):
+    """Opens the ICMP protocol on the firewall corresponding to the VM if
+    one exists.
+    """
+    if self.firewall:
+      self.firewall.AllowIcmp(self)
+
   def AllowPort(self, start_port, end_port=None):
     """Opens the port on the firewall corresponding to the VM if one exists."""
     if self.firewall:
@@ -307,16 +347,34 @@ class BaseVirtualMachine(resource.BaseResource):
     """
     pass
 
-  def GetMachineTypeDict(self):
-    """Returns a dict containing properties that specify the machine type.
+  def GetResourceMetadata(self):
+    """Returns a dict containing VM metadata.
 
     Returns:
       dict mapping string property key to value.
     """
-    result = {}
+    result = self.metadata.copy()
+    result.update({
+        'image': self.image,
+        'zone': self.zone,
+        'cloud': self.CLOUD,
+    })
     if self.machine_type is not None:
       result['machine_type'] = self.machine_type
+    if self.use_dedicated_host is not None:
+      result['dedicated_host'] = self.use_dedicated_host
+    if self.tcp_congestion_control is not None:
+      result['tcp_congestion_control'] = self.tcp_congestion_control
+    if self.numa_node_count is not None:
+      result['numa_node_count'] = self.numa_node_count
+    if self.num_disable_cpus is not None:
+      result['num_disable_cpus'] = self.num_disable_cpus
+
     return result
+
+  def SimulateMaintenanceEvent(self):
+    """Simulates a maintenance event on the VM."""
+    raise NotImplementedError()
 
 
 class BaseOsMixin(object):
@@ -388,6 +446,41 @@ class BaseOsMixin(object):
     except:
       raise
 
+  def Reboot(self):
+    """Reboot the VM."""
+
+    vm_bootable_time = None
+
+    # Use self.bootable_time to determine if this is the first boot.
+    # On the first boot, WaitForBootCompletion will only run once.
+    # On subsequent boots, need to WaitForBootCompletion and ensure
+    # the last boot time changed.
+    if self.bootable_time is not None:
+      vm_bootable_time = self.VMLastBootTime()
+
+    self._Reboot()
+
+    while True:
+      self.WaitForBootCompletion()
+      # WaitForBootCompletion ensures that the machine is up
+      # this is sufficient check for the first boot - but not for a reboot
+      if vm_bootable_time != self.VMLastBootTime():
+        break
+
+    self._AfterReboot()
+
+  @abc.abstractmethod
+  def _Reboot(self):
+    """OS-specific implementation of reboot command."""
+    raise NotImplementedError()
+
+  def _AfterReboot(self):
+    """Performs any OS-specific setup on the VM following reboot.
+
+    This will be called after every call to Reboot().
+    """
+    pass
+
   @abc.abstractmethod
   def RemoteCopy(self, file_path, remote_path='', copy_to=True):
     """Copies a file to or from the VM.
@@ -408,6 +501,12 @@ class BaseOsMixin(object):
 
     Implementations of this method should set the 'bootable_time' attribute
     and the 'hostname' attribute.
+    """
+    raise NotImplementedError()
+
+  @abc.abstractmethod
+  def VMLastBootTime(self):
+    """Returns the UTC time the VM was last rebooted as reported by the VM.
     """
     raise NotImplementedError()
 
@@ -550,6 +649,15 @@ class BaseOsMixin(object):
     raise NotImplementedError()
 
   @property
+  def total_free_memory_kb(self):
+    """Gets the amount of free memory on the VM.
+
+    Returns:
+      The number of kilobytes of memory on the VM.
+    """
+    return self._GetTotalFreeMemoryKb()
+
+  @property
   def total_memory_kb(self):
     """Gets the amount of memory on the VM.
 
@@ -559,6 +667,11 @@ class BaseOsMixin(object):
     if not self._total_memory_kb:
       self._total_memory_kb = self._GetTotalMemoryKb()
     return self._total_memory_kb
+
+  @abc.abstractmethod
+  def _GetTotalFreeMemoryKb(self):
+    """Returns the amount of free physical memory on the VM in Kilobytes."""
+    raise NotImplementedError()
 
   @abc.abstractmethod
   def _GetTotalMemoryKb(self):

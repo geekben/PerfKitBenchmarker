@@ -29,7 +29,12 @@ from perfkitbenchmarker import resource
 flags.DEFINE_string('static_dpb_service_instance', None,
                     'If set, the name of the pre created dpb implementation,'
                     'assumed to be ready.')
-flags.DEFINE_string('dpb_log_level', 'FATAL', 'Manipulate service log level')
+flags.DEFINE_string('dpb_log_level', 'INFO', 'Manipulate service log level')
+flags.DEFINE_string('dpb_job_jarfile', None,
+                    'Executable Jarfile containing workload implementation')
+flags.DEFINE_string('dpb_job_classname', None, 'Classname of the job '
+                                               'implementation in the jar file')
+
 
 _DPB_SERVICE_REGISTRY = {}
 FLAGS = flags.FLAGS
@@ -100,6 +105,7 @@ class BaseDpbService(resource.BaseResource):
   SPARK_JOB_TYPE = 'spark'
   HADOOP_JOB_TYPE = 'hadoop'
   DATAFLOW_JOB_TYPE = 'dataflow'
+  BEAM_JOB_TYPE = 'beam'
 
   def __init__(self, dpb_service_spec):
     """Initialize the Dpb service object.

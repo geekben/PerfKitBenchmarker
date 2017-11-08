@@ -29,15 +29,17 @@ import shutil
 
 import pkg_resources
 
+import perfkitbenchmarker
+
 from perfkitbenchmarker import flags
 from perfkitbenchmarker import temp_dir
 
 FLAGS = flags.FLAGS
 
-flags.DEFINE_multistring('data_search_paths', ['.'],
-                         'Additional paths to search for data files. '
-                         'These paths will be searched prior to using files '
-                         'bundled with PerfKitBenchmarker.')
+flags.DEFINE_multi_string('data_search_paths', ['.'],
+                          'Additional paths to search for data files. '
+                          'These paths will be searched prior to using files '
+                          'bundled with PerfKitBenchmarker.')
 
 _RESOURCES = 'resources'
 
@@ -147,7 +149,8 @@ class PackageResourceLoader(ResourceLoader):
 
 
 DATA_PACKAGE_NAME = 'perfkitbenchmarker.data'
-YCSB_WORKLOAD_DIR_NAME = 'perfkitbenchmarker/data/ycsb'
+YCSB_WORKLOAD_DIR_NAME = os.path.join(
+    os.path.dirname(perfkitbenchmarker.__file__), 'data/ycsb')
 SCRIPT_PACKAGE_NAME = 'perfkitbenchmarker.scripts'
 CONFIG_PACKAGE_NAME = 'perfkitbenchmarker.configs'
 DEFAULT_RESOURCE_LOADERS = [PackageResourceLoader(DATA_PACKAGE_NAME),

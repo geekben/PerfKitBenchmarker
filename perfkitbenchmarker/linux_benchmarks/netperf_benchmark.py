@@ -22,14 +22,13 @@ Runs TCP_RR, TCP_CRR, and TCP_STREAM benchmarks from netperf across two
 machines.
 """
 
-import os
+from collections import Counter
 import csv
 import io
 import json
 import logging
-
-from collections import Counter
-
+import os
+import re
 from perfkitbenchmarker import configs
 from perfkitbenchmarker import data
 from perfkitbenchmarker import flag_util
@@ -64,7 +63,7 @@ flags.DEFINE_integer('netperf_thinktime_run_length', 0,
 ALL_BENCHMARKS = ['TCP_RR', 'TCP_CRR', 'TCP_STREAM', 'UDP_RR']
 flags.DEFINE_list('netperf_benchmarks', ALL_BENCHMARKS,
                   'The netperf benchmark(s) to run.')
-flags.RegisterValidator(
+flags.register_validator(
     'netperf_benchmarks',
     lambda benchmarks: benchmarks and set(benchmarks).issubset(ALL_BENCHMARKS))
 
@@ -92,6 +91,12 @@ REMOTE_SCRIPT = 'netperf_test.py'
 
 PERCENTILES = [50, 90, 99]
 
+# By default, Container-Optimized OS (COS) host firewall allows only
+# outgoing connections and incoming SSH connections. To allow incoming
+# connections from VMs running netperf, we need to add iptables rules
+# on the VM running netserver.
+_COS_RE = re.compile(r'\b(cos|gci)-')
+
 
 def GetConfig(user_config):
   return configs.LoadConfig(BENCHMARK_CONFIG, user_config, BENCHMARK_NAME)
@@ -115,6 +120,10 @@ def Prepare(benchmark_spec):
 
   num_streams = max(FLAGS.netperf_num_streams)
 
+  # See comments where _COS_RE is defined.
+  if vms[1].image and re.search(_COS_RE, vms[1].image):
+    _SetupHostFirewall(benchmark_spec)
+
   # Start the netserver processes
   if vm_util.ShouldRunOnExternalIpAddress():
     # Open all of the command and data ports
@@ -126,25 +135,42 @@ def Prepare(benchmark_spec):
                        netserver_path=netperf.NETSERVER_PATH)
   vms[1].RemoteCommand(netserver_cmd)
 
-  # Install some stuff on the client vm
-  vms[0].Install('pip')
-  vms[0].RemoteCommand('sudo pip install python-gflags==2.0')
-
-  # Create a scratch directory for the remote test script
-  vms[0].RemoteCommand('sudo mkdir -p /tmp/run/')
-  vms[0].RemoteCommand('sudo chmod 777 /tmp/run/')
   # Copy remote test script to client
   path = data.ResourcePath(os.path.join(REMOTE_SCRIPTS_DIR, REMOTE_SCRIPT))
   logging.info('Uploading %s to %s', path, vms[0])
-  vms[0].PushFile(path, '/tmp/run/')
-  vms[0].RemoteCommand('sudo chmod 777 /tmp/run/%s' % REMOTE_SCRIPT)
+  vms[0].PushFile(path)
+  vms[0].RemoteCommand('sudo chmod 777 %s' % REMOTE_SCRIPT)
+
+
+def _SetupHostFirewall(benchmark_spec):
+  """Set up host firewall to allow incoming traffic.
+
+  Args:
+    benchmark_spec: The benchmark specification. Contains all data that is
+        required to run the benchmark.
+  """
+
+  client_vm = benchmark_spec.vms[0]
+  server_vm = benchmark_spec.vms[1]
+
+  ip_addrs = [client_vm.internal_ip]
+  if vm_util.ShouldRunOnExternalIpAddress():
+    ip_addrs.append(client_vm.ip_address)
+
+  logging.info('setting up host firewall on %s running %s for client at %s',
+               server_vm.name, server_vm.image, ip_addrs)
+  cmd = 'sudo iptables -A INPUT -p %s -s %s -j ACCEPT'
+  for protocol in 'tcp', 'udp':
+    for ip_addr in ip_addrs:
+      server_vm.RemoteHostCommand(cmd % (protocol, ip_addr))
 
 
 def _HistogramStatsCalculator(histogram, percentiles=PERCENTILES):
-  """ Computes values at percentiles in a distribution as well as stddev.
+  """Computes values at percentiles in a distribution as well as stddev.
 
   Args:
     histogram: A dict mapping values to the number of samples with that value.
+    percentiles: An array of percentiles to calculate.
 
   Returns:
     A dict mapping stat names to their values.
@@ -309,28 +335,27 @@ def RunNetperf(vm, benchmark_name, server_ip, num_streams):
                      length=FLAGS.netperf_test_length,
                      confidence=confidence, verbosity=verbosity)
   if FLAGS.netperf_thinktime != 0:
-    netperf_cmd += (' -U {thinktime},{thinktime_array_size},'
+    netperf_cmd += (' -X {thinktime},{thinktime_array_size},'
                     '{thinktime_run_length} ').format(
                         thinktime=FLAGS.netperf_thinktime,
                         thinktime_array_size=FLAGS.netperf_thinktime_array_size,
                         thinktime_run_length=FLAGS.netperf_thinktime_run_length)
 
-
   # Run all of the netperf processes and collect their stdout
-  # TODO: Record start times of netperf processes on the remote machine
+  # TODO: Record process start delta of netperf processes on the remote machine
 
   # Give the remote script the max possible test length plus 5 minutes to
   # complete
   remote_cmd_timeout = \
       FLAGS.netperf_test_length * (FLAGS.netperf_max_iter or 1) + 300
-  remote_script_path = '/tmp/run/%s' % REMOTE_SCRIPT
-  remote_cmd = '%s --netperf_cmd="%s" --num_streams=%s --port_start=%s' % \
-               (remote_script_path, netperf_cmd, num_streams, PORT_START)
+  remote_cmd = ('./%s --netperf_cmd="%s" --num_streams=%s --port_start=%s' %
+                (REMOTE_SCRIPT, netperf_cmd, num_streams, PORT_START))
   remote_stdout, _ = vm.RemoteCommand(remote_cmd,
                                       timeout=remote_cmd_timeout)
 
   # Decode stdouts, stderrs, and return codes from remote command's stdout
-  stdouts, stderrs, return_codes = json.loads(remote_stdout)
+  json_out = json.loads(remote_stdout)
+  stdouts = json_out[0]
 
   # Metadata to attach to samples
   metadata = {'netperf_test_length': FLAGS.netperf_test_length,
@@ -446,4 +471,4 @@ def Cleanup(benchmark_spec):
   """
   vms = benchmark_spec.vms
   vms[1].RemoteCommand('sudo killall netserver')
-  vms[0].RemoteCommand('sudo rm -rf /tmp/run/')
+  vms[0].RemoteCommand('sudo rm -rf %s' % REMOTE_SCRIPT)

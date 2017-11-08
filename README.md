@@ -7,14 +7,14 @@ tuned for any particular platform or instance type. These settings are recommend
 Only in the rare case where there is a common practice like setting the buffer pool size of a database do we
 change any settings.
 
-This README is designed to give you the information you need to get running with the benchmarker and the basics of working with the code.  The [wiki] (https://github.com/GoogleCloudPlatform/PerfKitBenchmarker/wiki) contains more detailed information:
+This README is designed to give you the information you need to get running with the benchmarker and the basics of working with the code.  The [wiki](https://github.com/GoogleCloudPlatform/PerfKitBenchmarker/wiki) contains more detailed information:
 
-* [FAQ] (https://github.com/GoogleCloudPlatform/PerfKitBenchmarker/wiki/FAQ)
-* [Tech Talks] (https://github.com/GoogleCloudPlatform/PerfKitBenchmarker/wiki/Tech-Talks)
-* [Governing rules] (https://github.com/GoogleCloudPlatform/PerfKitBenchmarker/wiki/Governing-Rules)
-* [Community meeting decks and notes] (https://github.com/GoogleCloudPlatform/PerfKitBenchmarker/wiki/Community-Meeting-Notes-Decks)
-* [Design documents] (https://github.com/GoogleCloudPlatform/PerfKitBenchmarker/wiki/Design-Docs)
-* You are always welcome to [open an issue] (https://github.com/GoogleCloudPlatform/PerfKitBenchmarker/issues) as well to contact us.
+* [FAQ](https://github.com/GoogleCloudPlatform/PerfKitBenchmarker/wiki/FAQ)
+* [Tech Talks](https://github.com/GoogleCloudPlatform/PerfKitBenchmarker/wiki/Tech-Talks)
+* [Governing rules](https://github.com/GoogleCloudPlatform/PerfKitBenchmarker/wiki/Governing-Rules)
+* [Community meeting decks and notes](https://github.com/GoogleCloudPlatform/PerfKitBenchmarker/wiki/Community-Meeting-Notes-Decks)
+* [Design documents](https://github.com/GoogleCloudPlatform/PerfKitBenchmarker/wiki/Design-Docs)
+* You are always welcome to [open an issue](https://github.com/GoogleCloudPlatform/PerfKitBenchmarker/issues), or to join us on #PerfKitBenchmarker on freenode to discuss issues you're having, pull requests, or anything else related to PerfKitBenchmarker
 
 
 Known Issues
@@ -39,13 +39,18 @@ In its current release these are the benchmarks that are executed:
   - `bonnie++`: [GPL v2](http://www.coker.com.au/bonnie++/readme.html)
   - `cassandra_ycsb`: [Apache v2](http://cassandra.apache.org/)
   - `cassandra_stress`: [Apache v2](http://cassandra.apache.org/)
-  - `cloudsuite3.0`: [CloudSuite 3.0 license](http://cloudsuite.ch/licenses/)
+  - `cloudsuite3.0`: [CloudSuite 3.0 license](http://cloudsuite.ch/pages/license/)
   - `cluster_boot`: MIT License
   - `coremark`: [EEMBC](https://www.eembc.org/)
   - `copy_throughput`: Apache v2
   - `fio`: [GPL v2](https://github.com/axboe/fio/blob/master/COPYING)
+  - [`gpu_pcie_bandwidth`](https://developer.nvidia.com/cuda-downloads): [NVIDIA
+    Software Licence
+    Agreement](http://docs.nvidia.com/cuda/eula/index.html#nvidia-driver-license)
   - `hadoop_terasort`: [Apache v2](http://hadoop.apache.org/)
   - `hpcc`: [Original BSD license](http://icl.cs.utk.edu/hpcc/faq/#263)
+  - [`hpcg`](https://github.com/hpcg-benchmark/hpcg/): [BSD
+    3-clause](https://github.com/hpcg-benchmark/hpcg/blob/master/LICENSE)
   - `iperf`: [BSD license](http://iperf.sourceforge.net/)
   - `memtier_benchmark`: [GPL v2](https://github.com/RedisLabs/memtier_benchmark)
   - `mesh_network`: [HP license](http://www.calculate-linux.org/packages/licenses/netperf)
@@ -57,11 +62,16 @@ In its current release these are the benchmarks that are executed:
   - [`oldisim`](https://github.com/GoogleCloudPlatform/oldisim):
     [Apache v2](https://github.com/GoogleCloudPlatform/oldisim/blob/master/LICENSE.txt)
   - `object_storage_service`: Apache v2
+  - `pgbench`: [PostgreSQL Licence](https://www.postgresql.org/about/licence/)
   - `ping`: No license needed.
   - `silo`: MIT License
   - `scimark2`: [public domain](http://math.nist.gov/scimark2/credits.html)
   - `speccpu2006`: [SPEC CPU2006](http://www.spec.org/cpu2006/)
+  - [`SHOC`](https://github.com/vetter/shoc): [BSD
+    3-clause](https://github.com/vetter/shoc/blob/master/LICENSE.txt)
   - `sysbench_oltp`: [GPL v2](https://github.com/akopytov/sysbench)
+  - [`TensorFlow`](https://github.com/tensorflow/tensorflow): [Apache
+    v2](https://github.com/tensorflow/tensorflow/blob/master/LICENSE)
   - [`tomcat`](https://github.com/apache/tomcat):
     [Apache v2](https://github.com/apache/tomcat/blob/trunk/LICENSE)
   - [`unixbench`](https://github.com/kdlucas/byte-unixbench):
@@ -154,7 +164,7 @@ $ sudo pip install -r requirements.txt
 
 ## Cloud account setup
 
-This section describes the setup steps needed for each cloud system.  
+This section describes the setup steps needed for each cloud system. Note that you only need to perform setup steps on the clouds you wish to test. If you only want to test Google Cloud, you only need to install and configure `gcloud`.
 * [Google Cloud](#install-gcloud-and-setup-authentication)
 * [OpenStack](#install-openstack-cli-client-and-setup-authentication)
 * [Kubernetes](#kubernetes-configuration-and-credentials)
@@ -551,7 +561,10 @@ Open the `.boto` file and edit the following fields:
 
 1. In the [Credentials] section:
 
-   `gs_oauth2_refresh_token`: set it to be the same as the `refresh_token` field in your gcloud credential file (~/.config/gcloud/credentials), which was setup as part of the `gcloud auth login` step.
+   `gs_oauth2_refresh_token`: set it to be the same as the `refresh_token` field in your gcloud credential file (~/.config/gcloud/credentials.db), which was setup as part of the `gcloud auth login` step. To see the refresh token, run
+   ```bash
+   $ strings ~/.config/gcloud/credentials.db.
+   ```
 
    `aws_access_key_id`, `aws_secret_access_key`: set these to be the AWS access keys you intend to use for these tests, or you can use the same keys as those in your existing AWS credentials file (`~/.aws/credentials`).
 
@@ -561,7 +574,7 @@ Open the `.boto` file and edit the following fields:
 
 3. In the `[OAuth2]` section:
 
-   `client_id`, `client_secret`: set these to be the same as those in your gcloud credentials file (`~/.config/gcloud/credentials`), which was setup as part of the `gcloud auth login` step.
+   `client_id`, `client_secret`: set these to be the same as those in your gcloud credentials file (`~/.config/gcloud/credentials.db`), which was setup as part of the `gcloud auth login` step.
 
 
 Running a Single Benchmark
@@ -639,14 +652,11 @@ $ ./pkb.py --cloud=ProfitBricks --machine_type=Small --benchmarks=iperf
 
 How to Run Windows Benchmarks
 ==================
-You must be running on a Windows machine in order to run Windows benchmarks.
-Install all dependencies as above and set TrustedHosts to accept all hosts so
-that you can open PowerShell sessions with the VMs (both machines having each
-other in their TrustedHosts list is necessary, but not sufficient to issue
-remote commands; valid credentials are still required):
-
-```
-set-item wsman:\localhost\Client\TrustedHosts -value *
+Install all dependencies as above and ensure that smbclient is installed on
+your system if you are running on a linux controller:
+```bash
+$ which smbclient
+/usr/bin/smbclient
 ```
 
 Now you can run Windows benchmarks by running with `--os_type=windows`. Windows has a
@@ -694,15 +704,16 @@ PerfKit Benchmarker.
 
 Flag | Notes
 -----|------
-`--help`         | see all flags
+`--helpmatch=pkb`         | see all global flags
+`--helpmatch=hpcc` | see all flags associated with the hpcc benchmark. You can substitute any benchmark name to see the associated flags.
 `--benchmarks`   | A comma separated list of benchmarks or benchmark sets to run such as `--benchmarks=iperf,ping` . To see the full list, run `./pkb.py --help`
 `--cloud`        | Cloud where the benchmarks are run. See the table below for choices.
 `--machine_type` | Type of machine to provision if pre-provisioned machines are not used. Most cloud providers accept the names of pre-defined provider-specific machine types (for example, GCP supports `--machine_type=n1-standard-8` for a GCE n1-standard-8 VM). Some cloud providers support YAML expressions that match the corresponding VM spec machine_type property in the [YAML configs](#configurations-and-configuration-overrides) (for example, GCP supports `--machine_type="{cpus: 1, memory: 4.5GiB}"` for a GCE custom VM with 1 vCPU and 4.5GiB memory). Note that the value provided by this flag will affect all provisioned machines; users who wish to provision different machine types for different roles within a single benchmark run should use the [YAML configs](#configurations-and-configuration-overrides) for finer control.
-`--zone`         | This flag allows you to override the default zone. See the table below.
+`--zones`         | This flag allows you to override the default zone. See the table below.
 `--data_disk_type` | Type of disk to use. Names are provider-specific, but see table below.
 
 The default cloud is 'GCP', override with the `--cloud` flag. Each cloud has a default
-zone which you can override with the `--zone` flag, the flag supports the same values
+zone which you can override with the `--zones` flag, the flag supports the same values
 that the corresponding Cloud CLIs take:
 
 Cloud name | Default zone | Notes
@@ -721,7 +732,7 @@ ProfitBricks | AUTO | Additional zones: ZONE_1, ZONE_2, or ZONE_3
 Example:
 
 ```bash
-./pkb.py --cloud=GCP --zone=us-central1-a --benchmarks=iperf,ping
+./pkb.py --cloud=GCP --zones=us-central1-a --benchmarks=iperf,ping
 ```
 
 The disk type names vary by provider, but the following table summarizes some
@@ -731,7 +742,7 @@ Cloud name | Network-attached SSD | Network-attached HDD
 -----------|----------------------|---------------------
 GCP | pd-ssd | pd-standard
 AWS | gp2 | standard
-Azure | premium-storage | standard-disk
+Azure | Premium_LRS | Standard_LRS
 Rackspace | cbs-ssd | cbs-sata
 
 Also note that `--data_disk_type=local` tells PKB not to allocate a separate
@@ -896,7 +907,7 @@ iperf:
 I called my file `iperf.yaml` and used it to run iperf from Siberia to a GCP VM in us-central1-f as follows:
 
 ```bash
-$ ./pkb.py --benchmarks=iperf --machine_type=f1-micro --benchmark_config_file=iperf.yaml --zone=us-central1-f --ip_addresses=EXTERNAL
+$ ./pkb.py --benchmarks=iperf --machine_type=f1-micro --benchmark_config_file=iperf.yaml --zones=us-central1-f --ip_addresses=EXTERNAL
 ```
 
 * `ip_addresses=EXTERNAL` tells PerfKit Benchmarker not to use 10.X (ie Internal) machine addresses that all Cloud VMs have.  Just use the external IP address.
@@ -969,6 +980,8 @@ Flag | Notes
 `--es_uri`         | The Elasticsearch server address and port (e.g. localhost:9200)
 `--es_index`       | The Elasticsearch index name to store documents (default: perfkit)
 `--es_type`        | The Elasticsearch document type (default: result)
+
+Note: Amazon ElasticSearch service currently does not support transport on port 9200 therefore you must use endpoint with port 80 eg. `search-<ID>.es.amazonaws.com:80` and allow your IP address in the cluster.
 
 Using InfluxDB Publisher
 =================
